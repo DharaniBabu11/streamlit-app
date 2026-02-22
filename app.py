@@ -2,29 +2,48 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, IsolationForest
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_curve, auc
 
-st.set_page_config(page_title="ElectroGuard - FYP", layout="wide")
+# -------------------------------------------------
+# PAGE CONFIG
+# -------------------------------------------------
+st.set_page_config(page_title="ElectroGuard", layout="wide")
 
-st.title("⚡ ElectroGuard: Electricity Theft Detection")
-st.markdown("### Final Year Project - Machine Learning Model Comparison")
+st.title("⚡ ElectroGuard")
+st.markdown("### AI-Based Electricity Theft Detection System")
+st.markdown("Final Year Project – Machine Learning Model Comparison")
 
-# ---------------- Sidebar Controls ----------------
-st.sidebar.header("Simulation Settings")
+st.info("""
+👨‍🎓 Student: Your Name  
+🎓 Course: B.Tech / B.E  
+🏫 College: Your College Name  
+📅 Academic Year: 2025–2026  
+""")
+
+st.markdown("---")
+
+# -------------------------------------------------
+# SIDEBAR CONTROLS
+# -------------------------------------------------
+st.sidebar.header("⚙ Simulation Settings")
 
 n_users = st.sidebar.slider("Number of Users", 200, 1000, 500)
 theft_ratio = st.sidebar.slider("Theft Percentage", 0.05, 0.40, 0.15)
 random_seed = st.sidebar.number_input("Random Seed", value=42)
 
-# ---------------- Data Generation ----------------
+run_button = st.sidebar.button("🚀 Run Simulation")
+
+# -------------------------------------------------
+# DATA GENERATION FUNCTION
+# -------------------------------------------------
 @st.cache_data
 def generate_data(n_users, theft_ratio, seed):
     np.random.seed(seed)
     days = 30
-
     data = np.random.normal(50, 10, (n_users, days))
     theft = np.random.choice([0, 1], n_users, p=[1-theft_ratio, theft_ratio])
 
@@ -36,77 +55,106 @@ def generate_data(n_users, theft_ratio, seed):
     df["theft"] = theft
     return df
 
-df = generate_data(n_users, theft_ratio, random_seed)
+# -------------------------------------------------
+# MAIN EXECUTION
+# -------------------------------------------------
+if run_button:
 
-X = df.drop("theft", axis=1)
-y = df["theft"]
+    with st.spinner("Training models and evaluating performance..."):
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=random_seed)
+        df = generate_data(n_users, theft_ratio, random_seed)
 
-# ---------------- Models ----------------
-lr = LogisticRegression(max_iter=500)
-rf = RandomForestClassifier(n_estimators=100)
-iso = IsolationForest(contamination=theft_ratio, random_state=random_seed)
+        X = df.drop("theft", axis=1)
+        y = df["theft"]
 
-lr.fit(X_train, y_train)
-rf.fit(X_train, y_train)
-iso.fit(X_train)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=random_seed
+        )
 
-# Predictions
-lr_pred = lr.predict(X_test)
-rf_pred = rf.predict(X_test)
+        # Models
+        lr = LogisticRegression(max_iter=500)
+        rf = RandomForestClassifier(n_estimators=100)
+        iso = IsolationForest(contamination=theft_ratio, random_state=random_seed)
 
-# Convert Isolation Forest output (-1,1) to (1,0)
-iso_pred = iso.predict(X_test)
-iso_pred = np.where(iso_pred == -1, 1, 0)
+        lr.fit(X_train, y_train)
+        rf.fit(X_train, y_train)
+        iso.fit(X_train)
 
-# ---------------- Metrics ----------------
-st.subheader("📊 Model Performance Comparison")
+        lr_pred = lr.predict(X_test)
+        rf_pred = rf.predict(X_test)
 
-col1, col2, col3 = st.columns(3)
+        iso_pred = iso.predict(X_test)
+        iso_pred = np.where(iso_pred == -1, 1, 0)
 
-with col1:
-    st.metric("Logistic Regression Accuracy", f"{accuracy_score(y_test, lr_pred):.2f}")
+        lr_acc = accuracy_score(y_test, lr_pred)
+        rf_acc = accuracy_score(y_test, rf_pred)
+        iso_acc = accuracy_score(y_test, iso_pred)
 
-with col2:
-    st.metric("Random Forest Accuracy", f"{accuracy_score(y_test, rf_pred):.2f}")
+    # -------------------------------------------------
+    # TABS
+    # -------------------------------------------------
+    tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "📈 Visual Analysis", "📄 Project Report"])
 
-with col3:
-    st.metric("Isolation Forest Accuracy", f"{accuracy_score(y_test, iso_pred):.2f}")
+    # ---------------- Dashboard ----------------
+    with tab1:
+        st.subheader("Model Performance Overview")
 
-# ---------------- Confusion Matrix ----------------
-st.subheader("🔎 Confusion Matrix - Random Forest")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Logistic Regression", f"{lr_acc:.2f}")
+        col2.metric("Random Forest", f"{rf_acc:.2f}")
+        col3.metric("Isolation Forest", f"{iso_acc:.2f}")
 
-cm = confusion_matrix(y_test, rf_pred)
-fig, ax = plt.subplots()
-ax.imshow(cm)
-ax.set_xlabel("Predicted")
-ax.set_ylabel("Actual")
-st.pyplot(fig)
+        st.markdown("### 📋 Model Comparison Table")
 
-# ---------------- ROC Curve ----------------
-st.subheader("📈 ROC Curve - Random Forest")
+        results = pd.DataFrame({
+            "Model": ["Logistic Regression", "Random Forest", "Isolation Forest"],
+            "Accuracy": [lr_acc, rf_acc, iso_acc]
+        })
 
-rf_probs = rf.predict_proba(X_test)[:, 1]
-fpr, tpr, _ = roc_curve(y_test, rf_probs)
-roc_auc = auc(fpr, tpr)
+        st.dataframe(results, use_container_width=True)
 
-fig2, ax2 = plt.subplots()
-ax2.plot(fpr, tpr)
-ax2.set_xlabel("False Positive Rate")
-ax2.set_ylabel("True Positive Rate")
-ax2.set_title(f"ROC Curve (AUC = {roc_auc:.2f})")
-st.pyplot(fig2)
+    # ---------------- Visuals ----------------
+    with tab2:
 
-# ---------------- Report ----------------
-st.subheader("📄 Classification Report - Random Forest")
-st.text(classification_report(y_test, rf_pred))
+        st.subheader("Confusion Matrix – Random Forest")
 
-# ---------------- Project Summary ----------------
-st.markdown("---")
-st.markdown("### 📌 Project Summary")
-st.write("""
-ElectroGuard uses machine learning techniques to detect abnormal electricity consumption patterns 
-that may indicate theft. This project compares supervised learning models and anomaly detection 
-methods to evaluate detection performance.
+        cm = confusion_matrix(y_test, rf_pred)
+        fig, ax = plt.subplots()
+        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax)
+        ax.set_xlabel("Predicted")
+        ax.set_ylabel("Actual")
+        st.pyplot(fig)
+
+        st.subheader("ROC Curve – Random Forest")
+
+        rf_probs = rf.predict_proba(X_test)[:, 1]
+        fpr, tpr, _ = roc_curve(y_test, rf_probs)
+        roc_auc = auc(fpr, tpr)
+
+        fig2, ax2 = plt.subplots()
+        ax2.plot(fpr, tpr)
+        ax2.plot([0,1], [0,1], linestyle="--")
+        ax2.set_xlabel("False Positive Rate")
+        ax2.set_ylabel("True Positive Rate")
+        ax2.set_title(f"AUC = {roc_auc:.2f}")
+        st.pyplot(fig2)
+
+    # ---------------- Report ----------------
+    with tab3:
+
+        st.subheader("Classification Report – Random Forest")
+        st.text(classification_report(y_test, rf_pred))
+
+        st.markdown("## 🌍 Real-World Impact")
+
+        st.write("""
+Electricity theft causes significant revenue losses to power distribution companies.
+ElectroGuard leverages machine learning algorithms to detect abnormal consumption 
+patterns and assist authorities in identifying potential theft cases.
+
+This system can improve grid reliability, reduce financial losses, 
+and enhance monitoring efficiency.
 """)
+
+else:
+    st.warning("Please click 'Run Simulation' from the sidebar to start the analysis.")
